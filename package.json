@@ -1,6 +1,7 @@
 {
   "name": "nest-framework",
   "module": "index.ts",
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
     "@types/bun": "latest",
