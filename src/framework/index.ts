@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import express from "express";
 import { Container as InversifyContainer, injectable as inverseInjectable, inject as inverseInject, decorate } from "inversify";
-import type { interfaces } from "inversify";
+import type { BindInFluentSyntax } from "inversify";
 import { z } from "zod";
 import dotenv from "dotenv";
 import type { ParsedQs } from "qs";
@@ -206,7 +206,7 @@ interface InjectionMetadata {
 // The token can be a class constructor
 function Inject(token: string | symbol | Constructor): ParameterDecorator {
   return (target: Object, propertyKey: string | symbol | undefined, parameterIndex: number) => {
-    decorate(inverseInject(token), target, parameterIndex);
+    decorate(inverseInject(token), target as Function, parameterIndex);
     const existingInjections: InjectionMetadata[] = Reflect.getMetadata("injections", target, propertyKey as string | symbol) || [];
 
     existingInjections.push({
@@ -278,7 +278,7 @@ class Container {
     } else if ("useClass" in provider) {
       this.bind(provider.provide, provider.useClass, provider.scope);
     } else if ("useFactory" in provider) {
-      this.inversifyContainer.bind(provider.provide).toFactory((ctx) => provider.useFactory);
+      this.inversifyContainer.bind(provider.provide).toDynamicValue(() => provider.useFactory());
     } else if ("useValue" in provider) {
       this.inversifyContainer.bind(provider.provide).toConstantValue(provider.useValue);
     } else {
@@ -293,7 +293,7 @@ class Container {
     this.applyScope(binding, scope || this.getClassScope(target));
   }
 
-  private applyScope<T>(binding: interfaces.BindingInSyntax<T>, scope: Scope): void {
+  private applyScope<T>(binding: BindInFluentSyntax<T>, scope: Scope): void {
     switch (scope) {
       case "Singleton":
         binding.inSingletonScope();
@@ -350,7 +350,7 @@ class MiniFramework {
   // scopeMiddleware method
   // Used to create a child container for each incoming request
   private scopeMiddleware(req: express.Request, res: express.Response, next: express.NextFunction): void {
-    req.container = this.container.inversifyContainer.createChild();
+    req.container = new InversifyContainer({ parent: this.container.inversifyContainer });
     res.on("finish", () => {
       // Clean up request-scoped instances
       req.container.unbindAll();
@@ -465,7 +465,7 @@ class MiniFramework {
             res.send(result);
           } catch (error) {
             if (error instanceof z.ZodError) {
-              return res.status(400).json({ errors: error.errors });
+              return res.status(400).json({ errors: error.issues });
             }
             next(error);
           }
