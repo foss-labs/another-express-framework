@@ -436,31 +436,40 @@ class MiniFramework {
             const requestContainer = req.container;
             const instance = requestContainer.get(controller);
 
-            const args = params
-              .sort((a: { index: number }, b: { index: number }) => a.index - b.index)
-              .map((param) => {
-                switch (param.type) {
-                  case "param":
-                    return req.params[param.data as string];
-                  case "body":
-                    return req.body;
-                  case "query":
-                    return req.query[param.data as string];
-                  case "custom":
-                    if (param.factory && typeof param.factory === "function") {
-                      return param.factory(req, res, next, param.data);
-                    }
-                    return undefined;
-                  default:
-                    return undefined;
-                }
-              });
+            const args = await Promise.all(
+              params
+                .sort((a: { index: number }, b: { index: number }) => a.index - b.index)
+                .map(async (param) => {
+                  let value: unknown;
 
-            let result = await instance[handlerName](...args);
+                  switch (param.type) {
+                    case "param":
+                      value = req.params[param.data as string];
+                      break;
+                    case "body":
+                      value = req.body;
+                      break;
+                    case "query":
+                      value = req.query[param.data as string];
+                      break;
+                    case "custom":
+                      if (param.factory && typeof param.factory === "function") {
+                        value = param.factory(req, res, next, param.data);
+                      }
+                      break;
+                    default:
+                      value = undefined;
+                  }
 
-            for (const pipe of pipes) {
-              result = await pipe(result);
-            }
+                  for (const pipe of pipes) {
+                    value = await pipe(value);
+                  }
+
+                  return value;
+                })
+            );
+
+            const result = await instance[handlerName](...args);
 
             res.send(result);
           } catch (error) {
@@ -514,8 +523,8 @@ class MiniFramework {
     };
   }
 
-  listen(port: number, callback?: () => void): void {
-    this.app.listen(port, callback);
+  listen(port: number, callback?: () => void) {
+    return this.app.listen(port, callback);
   }
 }
 
