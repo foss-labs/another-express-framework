@@ -371,7 +371,14 @@ class MiniFramework {
 
     imports.forEach((importedModule) => this.registerModule(importedModule));
 
-    providers.forEach((provider) => (!this.container.has(provider as Constructor) ? this.container.register(provider) : () => {}));
+    providers.forEach((provider) => {
+      // Skip providers whose token is already bound (e.g. shared by several modules)
+      // to avoid inversify "Ambiguous match" errors on resolution
+      const token = typeof provider === "function" ? provider : provider.provide;
+      if (!this.container.has(token)) {
+        this.container.register(provider);
+      }
+    });
 
     controllers.forEach((controller) => this.registerController(controller));
   }
