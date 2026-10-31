@@ -65,11 +65,6 @@ interface CanActivate {
   canActivate(req: express.Request, res: express.Response): boolean | Promise<boolean>;
 }
 
-// Config service interface
-interface ConfigService {
-  get(key: string): string | undefined;
-}
-
 // Decorators
 // UseFilters: Decorator to apply exception filters to a route or controller
 function UseFilters(...filters: Constructor<ExceptionFilter>[]): MethodDecorator & ClassDecorator {
@@ -329,11 +324,41 @@ class Container {
   }
 }
 
+// ConfigService: typed access to configuration values
+// T describes the shape of the configuration. Defaults to an untyped view of process.env.
 @Injectable()
-class ConfigService implements ConfigService {
-  get(key: string): string | undefined {
-    return process.env[key];
+class ConfigService<T extends Record<string, unknown> = Record<string, string | undefined>> {
+  protected values: T = process.env as unknown as T;
+
+  get<K extends keyof T & string>(key: K): T[K] {
+    return this.values[key];
   }
+
+  // getOrThrow: Like get, but throws if the value is undefined or null
+  getOrThrow<K extends keyof T & string>(key: K): NonNullable<T[K]> {
+    const value = this.values[key];
+    if (value === undefined || value === null) {
+      throw new Error(`Missing configuration value for "${key}"`);
+    }
+    return value as NonNullable<T[K]>;
+  }
+}
+
+// createConfigService: Validates the environment against a zod schema and returns a
+// ConfigService whose keys and value types are inferred from the schema.
+// Register with: { provide: ConfigService, useValue: createConfigService(schema) }
+function createConfigService<S extends z.ZodObject<z.ZodRawShape>>(
+  schema: S,
+  env: Record<string, string | undefined> = process.env
+): ConfigService<z.infer<S>> {
+  const result = schema.safeParse(env);
+  if (!result.success) {
+    const issues = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
+    throw new Error(`Invalid configuration: ${issues}`);
+  }
+  const config = new ConfigService<z.infer<S>>();
+  (config as unknown as { values: z.infer<S> }).values = result.data;
+  return config;
 }
 
 class MiniFramework {
@@ -538,6 +563,7 @@ export {
   UseInterceptor,
   Inject,
   ConfigService,
+  createConfigService,
   MiniFramework,
   HttpException,
   createParamDecorator,
